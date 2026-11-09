@@ -1,10 +1,14 @@
 import { useMemo, useState, type RefObject } from "react";
 import { EXPORT_FORMATS, exportDocument } from "../lib/export";
+import { findNode } from "../lib/id";
 import { useStudio } from "../store";
+import type { DesignNode } from "../types";
 
 export function ExportDialog({ canvasRef }: { canvasRef: RefObject<HTMLCanvasElement | null> }) {
   const { state, dispatch } = useStudio();
   const [picked, setPicked] = useState("png");
+  const [scale, setScale] = useState<1 | 2>(1);
+  const [scope, setScope] = useState<"selection" | "frames" | "document">("frames");
   const [toast, setToast] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -24,7 +28,15 @@ export function ExportDialog({ canvasRef }: { canvasRef: RefObject<HTMLCanvasEle
     const formatId = id ?? picked;
     setBusy(true);
     try {
-      await exportDocument(state.doc, formatId, canvasRef.current);
+      const selected = state.doc.selectedIds
+        .map((id) => findNode(state.doc.pages, id))
+        .filter((node): node is DesignNode => !!node);
+      const frames = state.doc.pages.filter(
+        (page) => selected.some((node) => node.id === page.id || findNode([page], node.id)),
+      );
+      const nodes =
+        scope === "document" ? undefined : scope === "frames" ? (frames.length ? frames : state.doc.pages) : selected.length ? selected : undefined;
+      await exportDocument(state.doc, formatId, canvasRef.current, { scale, nodes });
       const fmt = EXPORT_FORMATS.find((f) => f.id === formatId)!;
       setToast(`Exported ${fmt.label}`);
       dispatch({ type: "toggleExport" });
@@ -44,15 +56,31 @@ export function ExportDialog({ canvasRef }: { canvasRef: RefObject<HTMLCanvasEle
           <header>
             <div>
               <h2>Export any format</h2>
-              <p style={{ margin: "6px 0 0", color: "var(--paper-dim)" }}>
-                Current mode filters suggestions, but every format is available. Native binaries
-                (.psd, .fig, .indd) ship as structured interchange plus a flattened preview.
+              <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
+                Export the selected frames, the current selection, or the whole document. Raster files are real images. .fig, .pen, and .psd are interchange files.
               </p>
             </div>
             <button className="textbtn ghost" onClick={() => dispatch({ type: "toggleExport" })}>
               Close
             </button>
           </header>
+          <div className="seg" role="group" aria-label="Export scale and scope">
+            <button type="button" className="textbtn" aria-pressed={scope === "frames"} onClick={() => setScope("frames")}>
+              Frames
+            </button>
+            <button type="button" className="textbtn" aria-pressed={scope === "selection"} onClick={() => setScope("selection")}>
+              Selection
+            </button>
+            <button type="button" className="textbtn" aria-pressed={scope === "document"} onClick={() => setScope("document")}>
+              Document
+            </button>
+            <button type="button" className="textbtn" aria-pressed={scale === 1} onClick={() => setScale(1)}>
+              1×
+            </button>
+            <button type="button" className="textbtn" aria-pressed={scale === 2} onClick={() => setScale(2)}>
+              2×
+            </button>
+          </div>
           <div className="formats">
             {grouped.map(([group, items]) => (
               <div key={group} style={{ display: "contents" }}>

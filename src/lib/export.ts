@@ -24,15 +24,17 @@ export const EXPORT_FORMATS: ExportFormat[] = [
   { id: "eps", ext: "eps", mime: "application/postscript", label: "EPS", group: "Vector", hint: "Encapsulated PostScript", modes: ["vector", "layout"] },
   { id: "dfjson", ext: "designforce.json", mime: "application/json", label: "Design Force", group: "Native", hint: "Full scene graph", modes: ["all"] },
   { id: "penpot", ext: "penpot.json", mime: "application/json", label: "Penpot", group: "Native", hint: "Penpot-compatible JSON", modes: ["vector", "ai"] },
-  { id: "fig", ext: "fig.json", mime: "application/json", label: "Figma (.fig JSON)", group: "Native", hint: "OpenPencil-style fig tree", modes: ["vector", "ai"] },
-  { id: "pen", ext: "pen.json", mime: "application/json", label: "OpenPencil (.pen)", group: "Native", hint: "Node-tree document", modes: ["vector", "ai"] },
-  { id: "psd", ext: "psd.json", mime: "application/json", label: "Photoshop layers", group: "Photo", hint: "Layered JSON + flattened PNG", modes: ["photo"] },
+  { id: "fig", ext: "fig", mime: "application/json", label: ".fig", group: "Native", hint: "OpenPencil-style .fig tree (JSON interchange)", modes: ["all"] },
+  { id: "pen", ext: "pen", mime: "application/json", label: ".pen", group: "Native", hint: "OpenPencil node tree (JSON interchange)", modes: ["all"] },
+  { id: "psd", ext: "psd", mime: "application/json", label: ".psd", group: "Photo", hint: "Layer tree interchange (JSON, not a binary PSD)", modes: ["all"] },
   { id: "html", ext: "html", mime: "text/html", label: "HTML", group: "Code", hint: "Standalone page", modes: ["vector", "ai", "layout"] },
   { id: "jsx", ext: "jsx", mime: "text/plain", label: "React JSX", group: "Code", hint: "Tailwind-flavored JSX", modes: ["vector", "ai"] },
   { id: "css", ext: "css", mime: "text/css", label: "CSS tokens", group: "Code", hint: "Design tokens as CSS vars", modes: ["vector", "ai"] },
   { id: "tokens", ext: "tokens.json", mime: "application/json", label: "Design tokens", group: "Code", hint: "W3C-style tokens", modes: ["vector", "ai"] },
   { id: "lottie", ext: "json", mime: "application/json", label: "Lottie", group: "Motion", hint: "Bodymovin JSON", modes: ["motion"] },
-  { id: "webm", ext: "webm", mime: "video/webm", label: "WebM", group: "Motion", hint: "Canvas recording", modes: ["motion", "film"] },
+  { id: "webm", ext: "webm", mime: "video/webm", label: "WebM", group: "Video", hint: "Canvas recording", modes: ["all"] },
+  { id: "mp4", ext: "mp4", mime: "video/mp4", label: "MP4", group: "Video", hint: "Recorded when this browser can encode MP4", modes: ["all"] },
+  { id: "mov", ext: "mov", mime: "video/quicktime", label: "MOV", group: "Video", hint: "Recorded when this browser can encode QuickTime", modes: ["all"] },
   { id: "edl", ext: "edl", mime: "text/plain", label: "CMX EDL", group: "Film", hint: "Edit decision list", modes: ["film"] },
   { id: "fcpxml", ext: "fcpxml", mime: "application/xml", label: "FCPXML", group: "Film", hint: "Final Cut / Premiere XML", modes: ["film"] },
   { id: "idml", ext: "idml.xml", mime: "application/xml", label: "IDML-like", group: "Layout", hint: "InDesign interchange XML", modes: ["layout"] },
@@ -50,61 +52,100 @@ function download(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-function nodeToSvg(n: DesignNode, ox = 0, oy = 0): string {
-  if (!n.visible) return "";
+function polyPoints(x: number, y: number, w: number, h: number, sides: number, star: boolean) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const rx = Math.abs(w) / 2;
+  const ry = Math.abs(h) / 2;
+  const count = Math.max(3, sides) * (star ? 2 : 1);
+  return Array.from({ length: count }, (_, index) => {
+    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / count;
+    const scale = star && index % 2 === 1 ? 0.42 : 1;
+    return `${cx + Math.cos(angle) * rx * scale},${cy + Math.sin(angle) * ry * scale}`;
+  }).join(" ");
+}
+
+function nodeToSvg(n: DesignNode, ox = 0, oy = 0): { body: string; defs: string } {
+  if (!n.visible) return { body: "", defs: "" };
   const x = ox + n.x;
   const y = oy + n.y;
-  const fill = n.fill === "#00000000" ? "none" : n.fill;
-  const stroke = n.stroke === "transparent" ? "none" : n.stroke;
-  const kids = n.children.map((c) => nodeToSvg(c, x, y)).join("");
-  const common = `fill="${fill}" stroke="${stroke}" stroke-width="${n.strokeWidth}" opacity="${n.opacity}"`;
-  if (n.type === "ellipse") {
-    return `<ellipse cx="${x + n.w / 2}" cy="${y + n.h / 2}" rx="${n.w / 2}" ry="${n.h / 2}" ${common}/>${kids}`;
+  const kids = n.children.map((child) => nodeToSvg(child, x, y));
+  let defs = kids.map((kid) => kid.defs).join("");
+  let fill = n.fill === "#00000000" ? "none" : n.fill;
+  if (n.fillKind === "gradient") {
+    const gid = `grad-${n.id}`;
+    fill = `url(#${gid})`;
+    defs += `<linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${n.gradientFrom || "#ffffff"}"/><stop offset="100%" stop-color="${n.gradientTo || n.fill}"/></linearGradient>`;
   }
-  if (n.type === "text") {
+  const blend = n.blendMode && n.blendMode !== "normal" ? ` style="mix-blend-mode:${n.blendMode}"` : "";
+  const stroke = n.stroke === "transparent" ? "none" : n.stroke;
+  const common = `fill="${fill}" stroke="${stroke}" stroke-width="${n.strokeWidth}" opacity="${n.opacity}"${blend}`;
+  let body = "";
+  if (n.imageDataUrl) {
+    body = `<image href="${n.imageDataUrl}" x="${x}" y="${y}" width="${n.w}" height="${n.h}" opacity="${n.opacity}"${blend}/>`;
+  } else if (n.type === "ellipse") {
+    body = `<ellipse cx="${x + n.w / 2}" cy="${y + n.h / 2}" rx="${Math.abs(n.w) / 2}" ry="${Math.abs(n.h) / 2}" ${common}/>`;
+  } else if (n.type === "text") {
     const lines = (n.text ?? "").split("\n");
     const tspans = lines
-      .map((line, i) => `<tspan x="${x}" dy="${i === 0 ? 0 : (n.fontSize ?? 16) * 1.15}">${escapeXml(line)}</tspan>`)
+      .map((line, i) => `<tspan x="${x}" dy="${i === 0 ? 0 : (n.lineHeight ?? (n.fontSize ?? 16) * 1.15)}">${escapeXml(line)}</tspan>`)
       .join("");
-    return `<text x="${x}" y="${y + (n.fontSize ?? 16)}" font-size="${n.fontSize ?? 16}" font-weight="${n.fontWeight ?? 400}" font-family="Syne, Source Sans 3, sans-serif" ${common}>${tspans}</text>${kids}`;
+    body = `<text x="${x}" y="${y + (n.fontSize ?? 16)}" font-size="${n.fontSize ?? 16}" font-weight="${n.fontWeight ?? 400}" letter-spacing="${n.letterSpacing ?? 0}" font-family="Syne, Source Sans 3, sans-serif" ${common}>${tspans}</text>`;
+  } else if (n.vector?.points.length) {
+    const d = n.vector.points.map((point, index) => `${index ? "L" : "M"}${x + point.x} ${y + point.y}`).join(" ") + (n.vector.closed ? " Z" : "");
+    body = `<path d="${d}" ${common}/>`;
+  } else if (n.shape === "polygon" || n.shape === "star") {
+    body = `<polygon points="${polyPoints(x, y, n.w, n.h, n.sides ?? (n.shape === "star" ? 5 : 6), n.shape === "star")}" ${common}/>`;
+  } else if (n.type !== "path") {
+    body = `<rect x="${x}" y="${y}" width="${n.w}" height="${n.h}" rx="${n.radius || 0}" ${common}/>`;
+  } else {
+    body = `<line x1="${x}" y1="${y + n.h / 2}" x2="${x + n.w}" y2="${y + n.h / 2}" stroke="${stroke === "none" ? fill : stroke}" stroke-width="${Math.max(2, n.strokeWidth || 2)}" opacity="${n.opacity}"${blend}/>`;
   }
-  const rx = n.radius || 0;
-  return `<rect x="${x}" y="${y}" width="${n.w}" height="${n.h}" rx="${rx}" ${common}/>${kids}`;
+  return { body: body + kids.map((kid) => kid.body).join(""), defs };
 }
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-export function documentToSvg(doc: DocumentState): string {
-  const bounds = doc.pages.reduce(
+export function documentToSvg(doc: DocumentState, only?: DesignNode[]): string {
+  const source = only?.length ? only : doc.pages;
+  if (!source.length) {
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"/>`;
+  }
+  const minX = Math.min(...source.map((n) => n.x));
+  const minY = Math.min(...source.map((n) => n.y));
+  const shifted = source.map((n) => ({ ...n, x: n.x - minX + 24, y: n.y - minY + 24 }));
+  const bounds = shifted.reduce(
     (acc, p) => ({
-      w: Math.max(acc.w, p.x + p.w + 80),
-      h: Math.max(acc.h, p.y + p.h + 80),
+      w: Math.max(acc.w, p.x + p.w + 24),
+      h: Math.max(acc.h, p.y + p.h + 24),
     }),
-    { w: 800, h: 600 },
+    { w: 32, h: 32 },
   );
-  const inner = doc.pages.map((p) => nodeToSvg(p)).join("\n");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.w}" height="${bounds.h}" viewBox="0 0 ${bounds.w} ${bounds.h}" fill="none">${inner}</svg>`;
+  const parts = shifted.map((p) => nodeToSvg(p));
+  const defs = parts.map((part) => part.defs).join("");
+  const inner = parts.map((part) => part.body).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${bounds.w}" height="${bounds.h}" viewBox="0 0 ${bounds.w} ${bounds.h}" fill="none"><defs>${defs}</defs>${inner}</svg>`;
 }
 
-function rasterize(svg: string, mime: string, quality = 0.92): Promise<Blob> {
+function rasterize(svg: string, mime: string, quality = 0.92, scale = 1): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const blob = new Blob([svg], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, img.width);
-      canvas.height = Math.max(1, img.height);
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         reject(new Error("No 2d context"));
         return;
       }
-      ctx.fillStyle = "#12100e";
+      ctx.fillStyle = mime === "image/jpeg" ? "#ffffff" : "#12100e";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
@@ -289,12 +330,16 @@ export async function exportDocument(
   doc: DocumentState,
   formatId: string,
   canvasEl?: HTMLCanvasElement | null,
+  options?: { scale?: number; nodes?: DesignNode[] },
 ): Promise<void> {
   const fmt = EXPORT_FORMATS.find((f) => f.id === formatId);
   if (!fmt) throw new Error("Unknown format");
-  const safe = doc.name.replace(/[^\w\-]+/g, "-").toLowerCase();
-  const filename = `${safe}.${fmt.ext}`;
-  const svg = documentToSvg(doc);
+  const scale = options?.scale ?? 1;
+  const scoped = options?.nodes?.length ? { ...doc, pages: options.nodes } : doc;
+  const label = options?.nodes?.length === 1 ? options.nodes[0].name : doc.name;
+  const safe = label.replace(/[^\w\-]+/g, "-").toLowerCase();
+  const filename = `${safe}${scale > 1 ? `@${scale}x` : ""}.${fmt.ext}`;
+  const svg = documentToSvg(scoped);
 
   switch (fmt.id) {
     case "svg":
@@ -304,7 +349,7 @@ export async function exportDocument(
     case "jpg":
     case "webp":
     case "gif": {
-      const blob = await rasterize(svg, fmt.id === "jpg" ? "image/jpeg" : fmt.mime, fmt.id === "jpg" ? 0.9 : 0.92);
+      const blob = await rasterize(svg, fmt.id === "jpg" ? "image/jpeg" : fmt.mime, fmt.id === "jpg" ? 0.9 : 0.92, scale);
       download(blob, filename);
       return;
     }
@@ -315,7 +360,7 @@ export async function exportDocument(
     }
     case "pdf":
     case "pdfx": {
-      const pages = doc.pages.map((p) => ({
+      const pages = scoped.pages.map((p) => ({
         title: p.name,
         lines: flatten([p])
           .filter((n) => n.type === "text" && n.text)
@@ -325,15 +370,15 @@ export async function exportDocument(
       return;
     }
     case "eps":
-      download(new Blob([`%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 800 600\n%%Title: ${doc.name}\n${svg}\n`], { type: fmt.mime }), filename);
+      download(new Blob([`%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 800 600\n%%Title: ${scoped.name}\n${svg}\n`], { type: fmt.mime }), filename);
       return;
     case "dfjson":
-      download(new Blob([JSON.stringify({ kind: "design-force", version: 1, document: doc }, null, 2)], { type: fmt.mime }), filename);
+      download(new Blob([JSON.stringify({ kind: "design-force", version: 1, document: scoped }, null, 2)], { type: fmt.mime }), filename);
       return;
     case "penpot":
       download(
         new Blob(
-          [JSON.stringify({ type: "penpot/document", name: doc.name, pages: doc.pages.map((p) => ({ id: p.id, name: p.name, objects: flatten([p]) })) }, null, 2)],
+          [JSON.stringify({ type: "penpot/document", name: scoped.name, pages: scoped.pages.map((p) => ({ id: p.id, name: p.name, objects: flatten([p]) })) }, null, 2)],
           { type: fmt.mime },
         ),
         filename,
@@ -343,7 +388,7 @@ export async function exportDocument(
     case "pen":
       download(
         new Blob(
-          [JSON.stringify({ schema: fmt.id === "fig" ? "figma-compatible" : "openpencil-pen", name: doc.name, nodes: flatten(doc.pages) }, null, 2)],
+          [JSON.stringify({ schema: fmt.id === "fig" ? "figma-compatible" : "openpencil-pen", name: scoped.name, nodes: flatten(scoped.pages) }, null, 2)],
           { type: fmt.mime },
         ),
         filename,
@@ -352,7 +397,7 @@ export async function exportDocument(
     case "psd":
       download(
         new Blob(
-          [JSON.stringify({ kind: "photocraft-layers", name: doc.name, layers: flatten(doc.pages).map((n) => ({ name: n.name, type: n.type, blend: "normal", opacity: n.opacity, bounds: { x: n.x, y: n.y, w: n.w, h: n.h }, fill: n.fill, filters: n.filters })) }, null, 2)],
+          [JSON.stringify({ kind: "photocraft-layers", name: scoped.name, layers: flatten(scoped.pages).map((n) => ({ name: n.name, type: n.type, blend: "normal", opacity: n.opacity, bounds: { x: n.x, y: n.y, w: n.w, h: n.h }, fill: n.fill, filters: n.filters })) }, null, 2)],
           { type: fmt.mime },
         ),
         filename,
@@ -360,37 +405,35 @@ export async function exportDocument(
       return;
     case "html":
     case "pptx":
-      download(new Blob([htmlFromDoc(doc)], { type: "text/html" }), filename);
+      download(new Blob([htmlFromDoc(scoped)], { type: "text/html" }), filename);
       return;
     case "jsx":
-      download(new Blob([jsxFromDoc(doc)], { type: fmt.mime }), filename);
+      download(new Blob([jsxFromDoc(scoped)], { type: fmt.mime }), filename);
       return;
     case "css":
-      download(new Blob([cssTokens(doc)], { type: fmt.mime }), filename);
+      download(new Blob([cssTokens(scoped)], { type: fmt.mime }), filename);
       return;
     case "tokens":
-      download(new Blob([JSON.stringify(tokensFromDoc(doc), null, 2)], { type: fmt.mime }), filename);
+      download(new Blob([JSON.stringify(tokensFromDoc(scoped), null, 2)], { type: fmt.mime }), filename);
       return;
     case "lottie":
-      download(new Blob([JSON.stringify(lottieFromDoc(doc), null, 2)], { type: fmt.mime }), filename);
+      download(new Blob([JSON.stringify(lottieFromDoc(scoped), null, 2)], { type: fmt.mime }), filename);
       return;
-    case "webm": {
-      if (!canvasEl) {
-        const blob = await rasterize(svg, "image/png");
-        download(blob, `${safe}.png`);
-        return;
-      }
-      await recordCanvas(canvasEl, filename);
+    case "webm":
+    case "mp4":
+    case "mov": {
+      if (!canvasEl) throw new Error("Open the canvas before recording video");
+      await recordCanvas(canvasEl, filename, fmt.mime);
       return;
     }
     case "edl":
-      download(new Blob([edlFromDoc(doc)], { type: fmt.mime }), filename);
+      download(new Blob([edlFromDoc(scoped)], { type: fmt.mime }), filename);
       return;
     case "fcpxml":
       download(
         new Blob(
           [
-            `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.10"><project name="${escapeXml(doc.name)}"><sequence>${flatten(doc.pages)
+            `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE fcpxml>\n<fcpxml version="1.10"><project name="${escapeXml(scoped.name)}"><sequence>${flatten(scoped.pages)
               .filter((n) => n.duration)
               .map((n, i) => `<clip name="${escapeXml(n.name)}" offset="${n.start ?? i * 5}s" duration="${n.duration ?? 5}s"/>`)
               .join("")}</sequence></project></fcpxml>`,
@@ -404,7 +447,7 @@ export async function exportDocument(
       download(
         new Blob(
           [
-            `<?xml version="1.0"?><Document Name="${escapeXml(doc.name)}">${doc.pages
+            `<?xml version="1.0"?><Document Name="${escapeXml(scoped.name)}">${scoped.pages
               .map(
                 (p) =>
                   `<Spread Name="${escapeXml(p.name)}">${flatten([p])
@@ -422,7 +465,7 @@ export async function exportDocument(
     case "epub":
       download(
         new Blob(
-          [`<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeXml(doc.name)}</title></head><body>${flatten(doc.pages)
+          [`<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${escapeXml(scoped.name)}</title></head><body>${flatten(scoped.pages)
             .filter((n) => n.type === "text" && n.text)
             .map((n) => `<p>${escapeXml(n.text ?? "")}</p>`)
             .join("")}</body></html>`],
@@ -435,7 +478,7 @@ export async function exportDocument(
       download(
         new Blob(
           [
-            flatten(doc.pages)
+            flatten(scoped.pages)
               .filter((n) => n.type === "text" && n.text)
               .map((n) => n.text)
               .join("\n\n"),
@@ -450,17 +493,23 @@ export async function exportDocument(
   }
 }
 
-function recordCanvas(canvas: HTMLCanvasElement, filename: string): Promise<void> {
+function recordCanvas(canvas: HTMLCanvasElement, filename: string, mime: string): Promise<void> {
+  const candidates = [mime, mime === "video/quicktime" ? "video/mp4" : "", "video/webm;codecs=vp9", "video/webm"].filter(Boolean);
+  const chosen = candidates.find((type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type));
+  if (!chosen) return Promise.reject(new Error("This browser cannot record that video format"));
+  if (mime !== "video/webm" && !chosen.startsWith(mime.split(";")[0])) {
+    return Promise.reject(new Error(`This browser cannot encode ${mime}. Export WebM instead.`));
+  }
   return new Promise((resolve, reject) => {
     const stream = canvas.captureStream(30);
-    const rec = new MediaRecorder(stream, { mimeType: "video/webm" });
+    const rec = new MediaRecorder(stream, { mimeType: chosen });
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => {
       if (e.data.size) chunks.push(e.data);
     };
     rec.onerror = () => reject(new Error("Recording failed"));
     rec.onstop = () => {
-      download(new Blob(chunks, { type: "video/webm" }), filename);
+      download(new Blob(chunks, { type: chosen }), filename);
       resolve();
     };
     rec.start();

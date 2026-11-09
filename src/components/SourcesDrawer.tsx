@@ -36,7 +36,7 @@ export function SourcesDrawer() {
   return (
     <aside className="sources">
       <h3>Sources · Notebook</h3>
-      <p style={{ margin: "0 14px 12px", color: "var(--paper-dim)", fontSize: 12, lineHeight: 1.45 }}>
+      <p style={{ margin: "0 14px 12px", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
         Like NotebookLM: drop briefs, transcripts, brand PDFs, and URLs. AI Design and in-mode
         edits cite these instead of inventing a new brand.
       </p>
@@ -55,7 +55,7 @@ export function SourcesDrawer() {
           <select
             value={kind}
             onChange={(e) => setKind(e.target.value as SourceKind)}
-            style={{ background: "var(--ink)", border: "1px solid var(--rule-strong)", borderRadius: 6, padding: 6 }}
+            style={{ background: "var(--field)", border: "1px solid var(--rule-strong)", borderRadius: 6, padding: 6 }}
           >
             <option value="note">Note</option>
             <option value="url">URL</option>

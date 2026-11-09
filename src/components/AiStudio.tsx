@@ -1,14 +1,35 @@
 import { useState } from "react";
+import { planFromPrompt, type CraftPlan } from "../lib/craft";
 import { askClaude, getStoredKey, localDesign, setStoredKey } from "../lib/claude";
 import { uid } from "../lib/id";
 import { useStudio } from "../store";
-import { MODES } from "../types";
 
 export function AiStudio() {
   const { state, dispatch } = useStudio();
   const [prompt, setPrompt] = useState(
     "Design a landing hero for the Northlight campaign. Keep the copper/ink palette. Mobile + desktop artboards. CTA: Open a file.",
   );
+
+  const applyPlan = (plan: CraftPlan) => {
+    if (plan.kind === "place") {
+      dispatch({ type: "add", parentId: null, node: plan.node });
+      dispatch({ type: "select", id: plan.node.id });
+    } else if (plan.kind === "filters") {
+      dispatch({ type: "filters", id: plan.id, filters: plan.filters });
+      dispatch({ type: "select", id: plan.id });
+    } else if (plan.kind === "keyframes") {
+      dispatch({ type: "patch", id: plan.id, patch: { keyframes: plan.keyframes } });
+      dispatch({ type: "select", id: plan.id });
+    } else if (plan.kind === "comment") {
+      dispatch({ type: "comment", pin: plan.pin });
+    } else if (plan.kind === "master") {
+      dispatch({ type: "patch", id: plan.id, patch: { master: true } });
+      dispatch({ type: "select", id: plan.id });
+    } else if (plan.kind === "clips") {
+      dispatch({ type: "replaceDoc", pages: plan.pages, selectedIds: plan.pages[0] ? [plan.pages[0].id] : [] });
+    }
+    dispatch({ type: "note", note: plan.note });
+  };
 
   const send = async () => {
     const text = prompt.trim();
@@ -27,19 +48,23 @@ export function AiStudio() {
             prompt: text,
           })
         : localDesign(text, state.sources);
+      const plan = planFromPrompt(text, result.html ?? "", state.doc, state.doc.selectedId);
+      applyPlan(plan);
       dispatch({
         type: "chat",
-        message: { id: uid("m"), role: "assistant", content: result.text, html: result.html },
+        message: { id: uid("m"), role: "assistant", content: `${result.text}\n\n${plan.note}`, html: result.html },
       });
       if (result.html) dispatch({ type: "artboard", html: result.html });
     } catch (err) {
       const fallback = localDesign(text, state.sources);
+      const plan = planFromPrompt(text, fallback.html, state.doc, state.doc.selectedId);
+      applyPlan(plan);
       dispatch({
         type: "chat",
         message: {
           id: uid("m"),
           role: "assistant",
-          content: `Claude unavailable (${String(err)}). Showing a local, source-grounded artboard instead.\n\n${fallback.text}`,
+          content: `Claude unavailable (${String(err)}). The local design was still placed on the shared canvas.\n\n${fallback.text}\n\n${plan.note}`,
           html: fallback.html,
         },
       });
@@ -50,25 +75,8 @@ export function AiStudio() {
   };
 
   return (
-    <>
-      <div className="stage-wrap ai-split">
-        <div className="artboard">
-          {state.artboardHtml ? (
-            <iframe title="AI artboard" sandbox="allow-scripts" srcDoc={state.artboardHtml} />
-          ) : (
-            <div className="empty">
-              <h2>Prompt across every craft</h2>
-              <p>
-                Claude Design–style canvas. Describe a screen, a grade, a motion board, a spread,
-                or a PDF packet. Sources on the right keep the voice honest. Edits apply to the
-                active mode: {MODES.find((m) => m.id === state.mode)?.label}.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
       <aside className="panel right chat">
-        <h3>Design chat</h3>
+        <h3>Prompt</h3>
         <div className="messages">
           {state.chat.length === 0 ? (
             <div className="bubble">
@@ -85,6 +93,8 @@ export function AiStudio() {
         </div>
         <div className="composer">
           <textarea
+            id="ai-prompt"
+            aria-label="Design prompt"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => {
@@ -92,8 +102,8 @@ export function AiStudio() {
             }}
             placeholder="Describe a design or an edit across modes…"
           />
-          <button className="textbtn primary" onClick={send} disabled={state.busy}>
-            Design
+          <button className="textbtn primary" onClick={send} disabled={state.busy || !prompt.trim()}>
+            {state.busy ? "Generating…" : "Generate"}
           </button>
         </div>
         <div className="field">
@@ -109,6 +119,5 @@ export function AiStudio() {
           />
         </div>
       </aside>
-    </>
   );
 }

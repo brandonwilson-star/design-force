@@ -1,8 +1,8 @@
 # Design Force
 
-A unified **design collaboration** studio. One desk for interface, photo, motion, film, layout, and PDF — with a Claude Design–style AI mode and a NotebookLM-style sources panel. Export leaves in whatever language the next tool speaks.
+A unified **design collaboration** studio. One document, seven working desks: interface, photo, motion, film, layout, PDF, and a Claude Design–style prompt mode. Each desk edits the same frames. Export leaves in whatever language the next tool speaks.
 
-Open-source lineage (not a drop-in of those binaries; a merged web studio that credits and maps onto them):
+The desks reimplement the workflows of these open-source projects in original code. Lineage credits them; their repositories are not embedded:
 
 | Mode | Merges |
 | --- | --- |

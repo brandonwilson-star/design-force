@@ -1,24 +1,52 @@
 export type ModeId =
-  | "vector"
+  | "design"
   | "photo"
+  | "vector"
   | "motion"
   | "film"
+  | "ai"
+  | "prototype"
   | "layout"
-  | "pdf"
-  | "ai";
+  | "pdf";
 
 export type ToolId =
   | "select"
+  | "scale"
   | "frame"
+  | "section"
   | "rect"
   | "ellipse"
-  | "text"
+  | "line"
   | "pen"
+  | "pencil"
+  | "text"
+  | "slice"
   | "image"
   | "crop"
   | "brush"
   | "comment"
-  | "hand";
+  | "hand"
+  | "eyedropper"
+  | "zoom"
+  | "stamp"
+  | "eraser"
+  | "bucket"
+  | "wand"
+  | "flow"
+  | "hotspot"
+  | "direct"
+  | "camera"
+  | "razor"
+  | "slip"
+  | "reposition"
+  | "magnet"
+  | "audio"
+  | "expand"
+  | "history"
+  | "sparkles"
+  | "component"
+  | "polygon"
+  | "star";
 
 export type NodeType =
   | "page"
@@ -51,6 +79,96 @@ export interface Keyframe {
   scale?: number;
 }
 
+export interface LayoutGrid {
+  kind: "grid" | "columns";
+  size: number;
+  count: number;
+  gutter: number;
+  margin: number;
+  color: string;
+  opacity: number;
+}
+
+export interface PrototypeInteraction {
+  trigger: "click" | "hover" | "drag" | "after-delay";
+  action: "navigate" | "swap" | "overlay" | "back";
+  targetId: string;
+  duration: number;
+  delay?: number;
+  easing?: "ease-out" | "ease-in" | "linear" | "ease-in-out";
+  animation?: "smart" | "dissolve" | "move" | "instant";
+  preserveScroll?: boolean;
+}
+
+export interface ColorStyle {
+  id: string;
+  name: string;
+  value: string;
+}
+
+export interface TextStyle {
+  id: string;
+  name: string;
+  fontSize: number;
+  fontWeight: number;
+  fill: string;
+  letterSpacing?: number;
+  lineHeight?: number;
+}
+
+export interface DevelopPreset {
+  id: string;
+  name: string;
+  filters: PhotoFilters;
+}
+
+export interface CropRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface BrushStroke {
+  points: { x: number; y: number }[];
+  color: string;
+  size: number;
+}
+
+export interface DesignSheet {
+  id: string;
+  name: string;
+  nodes: DesignNode[];
+}
+
+export type ShareAccess = "view" | "comment" | "edit";
+
+export type ConstraintAxis = "start" | "end" | "center" | "stretch" | "scale";
+
+export type VariableKind = "color" | "number" | "boolean" | "string";
+
+export interface DesignVariable {
+  id: string;
+  name: string;
+  kind: VariableKind;
+  value: string;
+}
+
+export interface ComponentProp {
+  id: string;
+  name: string;
+  kind: "boolean" | "string";
+  targetName: string;
+}
+
+export interface NodeBindings {
+  fill?: string;
+  text?: string;
+  visible?: string;
+  radius?: string;
+  opacity?: string;
+}
+
 export interface DesignNode {
   id: string;
   type: NodeType;
@@ -70,12 +188,59 @@ export interface DesignNode {
   text?: string;
   fontSize?: number;
   fontWeight?: number;
+  italic?: boolean;
+  underline?: boolean;
+  letterSpacing?: number;
+  lineHeight?: number;
+  autoLayout?: "horizontal" | "vertical" | "wrap" | null;
+  layoutAlign?: string;
+  gap?: number;
+  padX?: number;
+  padY?: number;
+  fillKind?: "solid" | "gradient";
+  gradientFrom?: string;
+  gradientTo?: string;
+  blendMode?: "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "color" | "luminosity";
+  layoutGrid?: LayoutGrid | null;
+  component?: boolean;
+  variantName?: string;
+  variantProps?: Record<string, string>;
+  componentSet?: string;
+  componentProps?: ComponentProp[];
+  instanceOf?: string;
+  bindings?: NodeBindings;
+  interaction?: PrototypeInteraction | null;
+  mask?: boolean;
+  flattened?: boolean;
+  flipX?: boolean;
+  flipY?: boolean;
+  booleanOp?: "union" | "subtract" | "intersect" | "exclude" | null;
   imageDataUrl?: string;
   filters?: PhotoFilters;
+  crop?: CropRect | null;
+  strokes?: BrushStroke[];
+  effect?: "none" | "blur" | "tint" | "shadow" | "glass";
+  constraints?: { horizontal: ConstraintAxis; vertical: ConstraintAxis };
+  shape?: "polygon" | "star";
+  sides?: number;
+  section?: boolean;
+  contentsHidden?: boolean;
+  vector?: { points: { x: number; y: number }[]; closed: boolean };
+  master?: boolean;
+  usesMaster?: boolean;
+  rating?: number;
+  flag?: "pick" | "reject" | null;
   keyframes?: Keyframe[];
   start?: number;
   duration?: number;
   children: DesignNode[];
+}
+
+export interface CommentAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  dataUrl: string;
 }
 
 export interface CommentPin {
@@ -85,14 +250,17 @@ export interface CommentPin {
   author: string;
   body: string;
   resolved: boolean;
+  createdAt?: number;
+  attachments?: CommentAttachment[];
+  sheetId?: string;
 }
 
 export interface Collaborator {
   id: string;
   name: string;
   color: string;
-  x: number;
-  y: number;
+  x: number | null;
+  y: number | null;
   mode: ModeId;
 }
 
@@ -115,10 +283,18 @@ export interface ChatMessage {
 }
 
 export interface DocumentState {
+  id: string;
   name: string;
   pages: DesignNode[];
   selectedId: string | null;
+  selectedIds: string[];
   comments: CommentPin[];
+  colorStyles: ColorStyle[];
+  textStyles: TextStyle[];
+  variables: DesignVariable[];
+  developPresets: DevelopPreset[];
+  sheets: DesignSheet[];
+  activeSheetId: string;
 }
 
 export const MODES: {
@@ -129,53 +305,53 @@ export const MODES: {
   lineage: string[];
 }[] = [
   {
-    id: "vector",
-    label: "Vector & UI",
-    short: "Vector",
-    blurb: "Frames, components, auto-layout, and real-time collaboration.",
-    lineage: ["Penpot", "OpenPencil", "FigCraft"],
+    id: "design",
+    label: "Design",
+    short: "Design",
+    blurb: "Frames, auto layout, components, and the shared canvas.",
+    lineage: ["Penpot", "OpenPencil"],
   },
   {
     id: "photo",
-    label: "Photo & Raster",
+    label: "Photo",
     short: "Photo",
-    blurb: "Layers, masks, adjustments, and a local photo library.",
+    blurb: "Develop, crop, and paint plates on the same frames.",
     lineage: ["PhotoCraft", "LightCraft"],
   },
   {
+    id: "vector",
+    label: "Vector",
+    short: "Vector",
+    blurb: "Pen, shapes, and type on the same frames.",
+    lineage: ["Penpot", "OpenPencil"],
+  },
+  {
     id: "motion",
-    label: "Motion & Animation",
+    label: "Motion",
     short: "Motion",
-    blurb: "Compositions, keyframes, effects, and a render queue.",
+    blurb: "Keyframe the frames and play them back.",
     lineage: ["EffectCraft"],
   },
   {
     id: "film",
-    label: "Film & Edit",
-    short: "Film",
-    blurb: "Nonlinear timeline, color, sound, and sequence export.",
+    label: "Video",
+    short: "Video",
+    blurb: "Trim, move, and split the frames into a sequence.",
     lineage: ["FilmCraft"],
   },
   {
-    id: "layout",
-    label: "Layout & Print",
-    short: "Layout",
-    blurb: "Spreads, type, master pages, and press-ready packages.",
-    lineage: ["DesignCraft"],
-  },
-  {
-    id: "pdf",
-    label: "PDF & Docs",
-    short: "PDF",
-    blurb: "Read, annotate, combine, split, and secure documents.",
-    lineage: ["PdfCraft"],
+    id: "prototype",
+    label: "Prototype",
+    short: "Prototype",
+    blurb: "Connect the frames and present the flow.",
+    lineage: ["Penpot"],
   },
   {
     id: "ai",
-    label: "AI Design",
+    label: "AI",
     short: "AI",
-    blurb: "Prompt designs and edits across every mode, grounded in your sources.",
-    lineage: ["Claude Design", "ArtCraft Core"],
+    blurb: "Prompt a design or an edit onto the shared canvas.",
+    lineage: ["Claude Design"],
   },
 ];
 

@@ -27,7 +27,7 @@ Lineage: ${modeMeta?.lineage.join(", ")}
 When the user asks for a design, respond with:
 1. A short craft note (2-4 sentences) explaining choices, citing sources by title when you use them.
 2. A fenced HTML block (\`\`\`html ... \`\`\`) containing a self-contained artboard: inline CSS, no external assets, 1440×900 (or 390×844 if they ask mobile). Use the Northlight palette unless sources specify otherwise: ink #161310, cream #f3ece1, copper #c45c26, oxide #8f2d14. Display type: Syne or Georgia. Body: Source Sans 3 / system-ui.
-3. If they ask for an edit in another mode (photo, motion, film, layout, PDF), still produce HTML that *represents* that craft (a color-graded plate, a timeline, a spread, annotated PDF pages).
+3. The HTML is placed on the shared Design Force canvas. Vector, photo, motion, film, layout, and PDF are views of that same document, so design the frames those modes will keep editing.
 
 Never invent a competing brand when sources define one. Prefer print-room warmth over generic SaaS purple.
 

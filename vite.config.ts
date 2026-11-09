@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
+import { attachPresence } from "./server/presence";
 
 function claudeProxy(): Plugin {
   return {
@@ -51,8 +52,20 @@ function claudeProxy(): Plugin {
   };
 }
 
+function filePresence(): Plugin {
+  return {
+    name: "file-presence",
+    configureServer(server) {
+      if (server.httpServer) attachPresence(server.httpServer);
+    },
+    configurePreviewServer(server) {
+      if (server.httpServer) attachPresence(server.httpServer);
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), claudeProxy()],
+  plugins: [react(), claudeProxy(), filePresence()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

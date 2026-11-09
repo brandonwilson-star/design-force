@@ -1,4 +1,4 @@
-import type { Collaborator, DesignNode, SourceItem } from "./types";
+import type { DesignNode, SourceItem } from "./types";
 import { uid } from "./lib/id";
 
 function node(partial: Partial<DesignNode> & Pick<DesignNode, "type" | "name" | "x" | "y" | "w" | "h">): DesignNode {
@@ -359,12 +359,6 @@ export function seedDocument(): { name: string; pages: DesignNode[] } {
     pages: [hero, mobile, photoPlate, spread],
   };
 }
-
-export const seedCollaborators: Collaborator[] = [
-  { id: "c1", name: "Amara", color: "#c45c26", x: 420, y: 240, mode: "vector" },
-  { id: "c2", name: "Kenji", color: "#6b7f5a", x: 1100, y: 500, mode: "photo" },
-  { id: "c3", name: "Noor", color: "#3d6ea8", x: 240, y: 620, mode: "ai" },
-];
 
 export const seedSources: SourceItem[] = [
   {
